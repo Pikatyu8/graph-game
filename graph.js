@@ -200,14 +200,14 @@ window.GraphModule = (function() {
         const startTime = performance.now(); 
         let outerAttempts = 0; 
 
-        const maxOuterAttempts = 150;
-        const maxWeightAttempts = 30;
+        const maxOuterAttempts = 1000; // Увеличен лимит для строгого соответствия настроек
+        const maxWeightAttempts = 400; // Увеличен лимит для точной укладки весов
 
         while (outerAttempts < maxOuterAttempts) {
             outerAttempts++;
 
             // Предохранитель времени выполнения на одну итерацию
-            if (performance.now() - startTime > 400) {
+            if (performance.now() - startTime > 1500) {
                 break;
             }
 
@@ -354,7 +354,7 @@ window.GraphModule = (function() {
             let finalBackwardStepsCount = 0;
 
             for (let weightAttempt = 0; weightAttempt < maxWeightAttempts; weightAttempt++) {
-                if (performance.now() - startTime > 400) {
+                if (performance.now() - startTime > 1500) {
                     break;
                 }
 
@@ -411,7 +411,9 @@ window.GraphModule = (function() {
                     endNode: endNode,
                     totalLayers: totalLayers,
                     backwardStepsCount: finalBackwardStepsCount,
-                    totalEdges: getCurrentEdgeCount()
+                    totalEdges: getCurrentEdgeCount(),
+                    actualMinSteps: userMinSteps,
+                    actualMinBacksteps: userMinBacksteps
                 };
             }
         }
