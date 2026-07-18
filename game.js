@@ -16,7 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFullscreen = document.getElementById('btn-fullscreen');
     const btnExitFullscreenOverlay = document.getElementById('btn-exit-fullscreen-overlay');
     const btnLang = document.getElementById('btn-lang');
-    const chkBackward = document.getElementById('chk-require-backward');
+
+    const inputMinEdges = document.getElementById('input-min-edges');
+    const inputMaxEdges = document.getElementById('input-max-edges');
+    const inputMinSteps = document.getElementById('input-min-steps');
+    const inputMinBacksteps = document.getElementById('input-min-backsteps');
+    const btnResetDefaults = document.getElementById('btn-reset-defaults');
 
     let currentDifficulty = 'easy';
     let directed = false;
@@ -47,7 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
             diffExtreme: "Extreme (24)",
             modeUndirected: "Undirected",
             modeDirected: "Directed",
-            modeBackward: "Require backward step (loop)",
             explainUndirected: "<strong>Undirected Graph:</strong> Edges have no arrows and can be traversed in both directions.",
             explainDirected: "<strong>Directed Graph:</strong> Edges have arrows and can only be traversed in the direction they point. Backwards steps must use explicitly generated backwards arcs.",
             pathPrefix: "Your path: ",
@@ -61,7 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltipCheck: "Hotkey: Enter",
             tooltipSolution: "Hotkey: S",
             tooltipTheme: "Toggle light/dark theme",
-            tooltipFullscreen: "Toggle fullscreen mode"
+            tooltipFullscreen: "Toggle fullscreen mode",
+            labelMinEdges: "Min Connections:",
+            labelMaxEdges: "Max Connections:",
+            labelMinSteps: "Min Path Steps:",
+            labelMinBacksteps: "Min Backsteps:",
+            btnResetDefaults: "Reset to Defaults"
         },
         ru: {
             title: "Тренажер Дейкстры: Кратчайший путь в уме",
@@ -80,7 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
             diffExtreme: "Экстрим (24)",
             modeUndirected: "Неориентированный",
             modeDirected: "Ориентированный",
-            modeBackward: "Обязательный шаг назад (петля)",
             explainUndirected: "<strong>Неориентированный граф:</strong> рёбра не имеют направления, по ним можно ходить в обе стороны.",
             explainDirected: "<strong>Ориентированный граф:</strong> рёбра имеют стрелки и могут быть пройдены только в указанном направлении. Шаг назад возможен только по явным обратным рёбрам.",
             pathPrefix: "Ваш путь: ",
@@ -94,7 +102,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltipCheck: "Горячая клавиша: Enter",
             tooltipSolution: "Горячая клавиша: S",
             tooltipTheme: "Переключить тему",
-            tooltipFullscreen: "Полноэкранный режим"
+            tooltipFullscreen: "Полноэкранный режим",
+            labelMinEdges: "Мин. связей:",
+            labelMaxEdges: "Макс. связей:",
+            labelMinSteps: "Мин. шагов пути:",
+            labelMinBacksteps: "Мин. шагов назад:",
+            btnResetDefaults: "Сбросить до исходных"
         }
     };
 
@@ -222,8 +235,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 let u1 = graphData.nodes.find(n => n.name === e1.u);
                 let v1 = graphData.nodes.find(n => n.name === e1.v);
-                let u2 = graphData.nodes.find(n => n.name === e2.u);
-                let v2 = graphData.nodes.find(n => n.name === e2.v);
+                let u2 = graphData.nodes.find(n => n.name === e1.u); // fallback
+                let v2 = graphData.nodes.find(n => n.name === e1.v); // fallback
+                
+                let u2_real = graphData.nodes.find(n => n.name === e2.u);
+                let v2_real = graphData.nodes.find(n => n.name === e2.v);
                 
                 let isParallel = (e1.u === e2.u && e1.v === e2.v);
                 let isOpposite = (e1.u === e2.v && e1.v === e2.u);
@@ -257,9 +273,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 let m1 = { x: (u1.x + v1.x)/2, y: (u1.y + v1.y)/2 };
-                let m2 = { x: (u2.x + v2.x)/2, y: (u2.y + v2.y)/2 };
+                let m2 = { x: (u2_real.x + v2_real.x)/2, y: (u2_real.y + v2_real.y)/2 };
                 
-                let d1 = distToSegment(m1, u2, v2);
+                let d1 = distToSegment(m1, u2_real, v2_real);
                 let d2 = distToSegment(m2, u1, v1);
                 
                 if (d1 < 16 || d2 < 16) {
@@ -724,9 +740,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const modeInput = document.querySelector('input[name="graph-mode"]:checked');
         directed = (modeInput.value === 'directed');
 
-        const requireBackward = chkBackward ? chkBackward.checked : false;
+        const minEdges = parseInt(inputMinEdges.value) || 6;
+        const maxEdges = parseInt(inputMaxEdges.value) || 12;
+        const minSteps = parseInt(inputMinSteps.value) || 1;
+        const minBacksteps = parseInt(inputMinBacksteps.value) || 0;
 
-        graphData = window.GraphModule.generateGraph(currentDifficulty, directed, requireBackward);
+        graphData = window.GraphModule.generateGraph(currentDifficulty, directed, minEdges, maxEdges, minSteps, minBacksteps);
         assignCoordinates();
 
         userPath = [graphData.startNode];
@@ -747,6 +766,121 @@ document.addEventListener('DOMContentLoaded', () => {
         const sum = calculateUserPathSum();
         const langData = translations[currentLang];
         pathDisplay.innerText = `${langData.pathPrefix}${userPath.join(' -> ')} (${langData.pathSum}: ${sum})`;
+
+        // Отрисовка характеристик сгенерированного графа
+        const infoEl = document.getElementById('graph-info');
+        if (infoEl) {
+            const backCount = graphData.backwardStepsCount || 0;
+            const totalEdges = graphData.totalEdges || 0;
+            
+            if (currentLang === 'ru') {
+                infoEl.innerHTML = `Связей в графе: <strong>${totalEdges}</strong> | Требуемых шагов назад: <strong>${backCount}</strong>`;
+            } else {
+                infoEl.innerHTML = `Connections in graph: <strong>${totalEdges}</strong> | Required backward steps: <strong>${backCount}</strong>`;
+            }
+        }
+    }
+
+    function getBalancedDefaults(difficulty, directed) {
+        const defaults = {
+            easy: { minEdges: 8, maxEdges: 11, minSteps: 1, minBacksteps: 0 },
+            medium: { minEdges: 18, maxEdges: 26, minSteps: 2, minBacksteps: 0 },
+            hard: { minEdges: 35, maxEdges: 55, minSteps: 4, minBacksteps: 0 },
+            extreme: { minEdges: 60, maxEdges: 90, minSteps: 7, minBacksteps: 0 }
+        }[difficulty] || { minEdges: 8, maxEdges: 11, minSteps: 1, minBacksteps: 0 };
+
+        if (directed) {
+            return {
+                minEdges: Math.round(defaults.minEdges * 1.3),
+                maxEdges: Math.round(defaults.maxEdges * 1.3),
+                minSteps: defaults.minSteps,
+                minBacksteps: defaults.minBacksteps
+            };
+        }
+        return defaults;
+    }
+
+    function updateLimits() {
+        const modeInput = document.querySelector('input[name="graph-mode"]:checked');
+        const isDirected = (modeInput.value === 'directed');
+
+        const limits = window.GraphModule.getEdgeLimits(currentDifficulty, isDirected);
+
+        const hintMinEdges = document.getElementById('hint-min-edges');
+        const hintMaxEdges = document.getElementById('hint-max-edges');
+        const hintMinSteps = document.getElementById('hint-min-steps');
+        const hintMinBacksteps = document.getElementById('hint-min-backsteps');
+
+        // Обновление ограничений в DOM
+        inputMinEdges.min = limits.min;
+        inputMinEdges.max = limits.max;
+
+        inputMaxEdges.min = limits.min;
+        inputMaxEdges.max = limits.max;
+
+        inputMinSteps.min = 1;
+        inputMinSteps.max = limits.maxSteps; 
+
+        // --- ДИНАМИЧЕСКИЙ РАСЧЕТ ШАГОВ НАЗАД НА ОСНОВЕ НАСТРОЕК СВЯЗЕЙ ---
+        const currentMaxEdges = parseInt(inputMaxEdges.value) || limits.max;
+        const excessEdges = Math.max(0, currentMaxEdges - limits.min);
+        
+        const divisor = isDirected ? 2 : 3;
+        const maxBackstepsByEdges = Math.floor(excessEdges / divisor);
+        
+        const dynamicMaxBacksteps = Math.max(0, Math.min(limits.maxBacksteps, maxBackstepsByEdges));
+
+        inputMinBacksteps.min = 0;
+        inputMinBacksteps.max = dynamicMaxBacksteps;
+
+        hintMinEdges.innerText = `(min: ${limits.min})`;
+        hintMaxEdges.innerText = `(max: ${limits.max})`;
+        hintMinSteps.innerText = `(max: ${limits.maxSteps})`;
+        hintMinBacksteps.innerText = `(max: ${dynamicMaxBacksteps})`;
+
+        // Корректировка значений, если они выходят за новые границы
+        let minVal = parseInt(inputMinEdges.value) || limits.min;
+        let maxVal = parseInt(inputMaxEdges.value) || limits.max;
+        let stepsVal = parseInt(inputMinSteps.value) || 1;
+        let backstepsVal = parseInt(inputMinBacksteps.value) || 0;
+
+        if (minVal < limits.min) minVal = limits.min;
+        if (minVal > limits.max) minVal = limits.max;
+
+        if (maxVal < minVal) maxVal = minVal;
+        if (maxVal > limits.max) maxVal = limits.max;
+
+        if (stepsVal < 1) stepsVal = 1;
+        if (stepsVal > limits.maxSteps) stepsVal = limits.maxSteps;
+
+        if (backstepsVal < 0) backstepsVal = 0;
+        if (backstepsVal > dynamicMaxBacksteps) backstepsVal = dynamicMaxBacksteps;
+
+        inputMinEdges.value = minVal;
+        inputMaxEdges.value = maxVal;
+        inputMinSteps.value = stepsVal;
+        inputMinBacksteps.value = backstepsVal;
+    }
+
+    function resetToBalancedDefaults() {
+        const modeInput = document.querySelector('input[name="graph-mode"]:checked');
+        const isDirected = (modeInput.value === 'directed');
+
+        const limits = window.GraphModule.getEdgeLimits(currentDifficulty, isDirected);
+        const defaults = getBalancedDefaults(currentDifficulty, isDirected);
+
+        let minVal = Math.max(limits.min, Math.min(limits.max, defaults.minEdges));
+        let maxVal = Math.max(minVal, Math.min(limits.max, defaults.maxEdges));
+        let stepsVal = Math.max(1, Math.min(limits.maxSteps, defaults.minSteps));
+        let backstepsVal = Math.max(0, Math.min(limits.maxBacksteps, defaults.minBacksteps));
+
+        inputMinEdges.value = minVal;
+        inputMaxEdges.value = maxVal;
+        inputMinSteps.value = stepsVal;
+        inputMinBacksteps.value = backstepsVal;
+
+        updateLimits();
+        initGame();
     }
 
     function getNodeAt(x, y) {
@@ -814,10 +948,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (clickedNode) {
             handleNodeClick(clickedNode);
         } else {
-            // Клик по самому ребру (маршруту)
             const clickedEdge = getEdgeAt(x, y);
             if (clickedEdge) {
-                // Если ребро уже пройдено, сбрасываем путь до начальной точки этого ребра
                 let edgeInPathIndex = -1;
                 for (let i = 0; i < userPath.length - 1; i++) {
                     let pu = userPath[i];
@@ -831,7 +963,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (edgeInPathIndex !== -1) {
                     userPath = userPath.slice(0, edgeInPathIndex + 1);
                 } else {
-                    // Пытаемся пойти по ребру от активной (последней) вершины
                     const last = userPath[userPath.length - 1];
                     if (directed) {
                         if (clickedEdge.u === last) {
@@ -857,21 +988,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.classList.add('active');
             currentDifficulty = e.target.getAttribute('data-diff');
             
-            const chkContainer = document.getElementById('backward-step-container');
-            if (currentDifficulty === 'easy') {
-                chkContainer.style.display = 'none';
-                if (chkBackward) chkBackward.checked = false; 
-            } else {
-                chkContainer.style.display = 'flex';
-            }
-            
-            initGame();
+            updateLimits();
+            resetToBalancedDefaults();
         });
     });
-
-    if (chkBackward) {
-        chkBackward.addEventListener('change', initGame);
-    }
 
     function resetPath() {
         userPath = [graphData.startNode];
@@ -935,7 +1055,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCheck.addEventListener('click', checkPath);
     btnShowSolution.addEventListener('click', showSolution);
 
-    // Функция перевода текстов
     function applyLanguage() {
         const langData = translations[currentLang];
         document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -947,7 +1066,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateModeExplanation();
 
-        // Динамические всплывающие подсказки (Title) на кнопках
         btnNewGame.setAttribute('title', langData.tooltipNewGame);
         btnResetPath.setAttribute('title', langData.tooltipReset);
         btnCheck.setAttribute('title', langData.tooltipCheck);
@@ -959,7 +1077,6 @@ document.addEventListener('DOMContentLoaded', () => {
             btnExitFullscreenOverlay.setAttribute('title', currentLang === 'en' ? 'Exit Fullscreen' : 'Выйти из полноэкранного режима');
         }
 
-        // Кнопка переключения языка на противоположный
         btnLang.innerText = currentLang === 'en' ? '🇷🇺 RU' : '🇬🇧 EN';
 
         document.title = langData.title;
@@ -984,7 +1101,6 @@ document.addEventListener('DOMContentLoaded', () => {
         applyLanguage();
     });
 
-    // Переключатель тем
     btnTheme.addEventListener('click', () => {
         document.body.classList.toggle('dark');
         const isDark = document.body.classList.contains('dark');
@@ -993,7 +1109,6 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     });
 
-    // Полноэкранный режим для игровой зоны
     btnFullscreen.addEventListener('click', () => {
         const gameArea = document.querySelector('.game-area');
         if (!document.fullscreenElement) {
@@ -1005,7 +1120,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Кнопка закрытия внутри полноэкранного режима
     if (btnExitFullscreenOverlay) {
         btnExitFullscreenOverlay.addEventListener('click', () => {
             if (document.fullscreenElement) {
@@ -1018,12 +1132,10 @@ document.addEventListener('DOMContentLoaded', () => {
         applyLanguage();
     });
 
-    // Управление с клавиатуры
     document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
         const upperKey = e.key.toUpperCase();
 
-        // Игра исключительно с клавиатуры: нажатие букв A-Z
         if (gameState === 'playing' && key >= 'a' && key <= 'z') {
             if (graphData && graphData.nodes.some(n => n.name === upperKey)) {
                 handleNodeClick(upperKey);
@@ -1031,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Горячие клавиши управления игрой
         if (key === 'n') {
             initGame();
         } else if (key === 'c') {
@@ -1048,11 +1159,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="graph-mode"]').forEach(radio => {
         radio.addEventListener('change', () => {
             updateModeExplanation();
-            initGame();
+            updateLimits();
+            resetToBalancedDefaults();
         });
     });
 
-    // Загрузка темы из памяти
+    inputMinEdges.addEventListener('change', () => {
+        updateLimits();
+        initGame();
+    });
+    inputMaxEdges.addEventListener('change', () => {
+        updateLimits();
+        initGame();
+    });
+    inputMinSteps.addEventListener('change', () => {
+        updateLimits();
+        initGame();
+    });
+    inputMinBacksteps.addEventListener('change', () => {
+        updateLimits();
+        initGame();
+    });
+    btnResetDefaults.addEventListener('click', resetToBalancedDefaults);
+
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
         document.body.classList.add('dark');
@@ -1061,6 +1190,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnTheme.innerText = '🌙 Mode';
     }
 
+    updateLimits();
     applyLanguage();
     initGame();
 });

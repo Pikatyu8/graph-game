@@ -21,16 +21,76 @@ window.GraphModule = (function() {
 
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    function calculateWeight(fromLayer, toLayer, totalLayers) {
-        const isShortcut = Math.abs(toLayer - fromLayer) > 1;
-        const isNearEnd = fromLayer >= totalLayers - 3;
+    function getEdgeLimits(difficulty, directed) {
+        const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.easy;
+        const L = config.layers;
+        const numNodes = L.reduce((a, b) => a + b, 0);
+
+        // Расчет минимального кол-ва рёбер для обеспечения связности
+        let minEdges = L[1];
+        for (let i = 1; i < L.length - 1; i++) {
+            minEdges += Math.max(L[i], L[i+1]);
+        }
+
+        // Расчет максимального количества непараллельных рёбер в слоистой структуре
+        let maxForward = 0;
+        for (let i = 0; i < L.length - 1; i++) {
+            maxForward += L[i] * L[i+1];
+        }
+        let maxSkip = 0;
+        for (let i = 0; i < L.length - 2; i++) {
+            maxSkip += L[i] * L[i+2];
+        }
+
+        let maxEdges = maxForward + maxSkip;
+        if (directed) {
+            maxEdges = maxEdges * 2; // В ориентированном графе могут быть прямые и обратные дуги
+        }
+
+        // Математически и практически проверенные лимиты на основе тестов производительности
+        let maxSteps = numNodes - 1;
+        let maxBacksteps = 0;
+
+        if (difficulty === 'easy') {
+            maxSteps = 5;
+            maxBacksteps = 1;
+        } else if (difficulty === 'medium') {
+            maxSteps = 7;
+            maxBacksteps = 2;
+        } else if (difficulty === 'hard') {
+            maxSteps = 8;
+            maxBacksteps = 3;
+        } else if (difficulty === 'extreme') {
+            maxSteps = 9; // Практический предел для кратчайшего пути на 24 вершинах
+            maxBacksteps = directed ? 2 : 4; // Лимиты подтверждены логом тестов
+        }
+
+        return { min: minEdges, max: maxEdges, nodes: numNodes, maxSteps: maxSteps, maxBacksteps: maxBacksteps };
+    }
+
+    function getEdgeWeight(uNode, vNode, totalLayers, trapNodes) {
+        const isBackward = vNode.layer < uNode.layer;
+        const isShortcut = Math.abs(vNode.layer - uNode.layer) > 1;
+        const isNearEnd = uNode.layer >= totalLayers - 3;
+
+        if (isBackward) {
+            return Math.floor(Math.random() * 4) + 2; // Обратное ребро: 2 - 5
+        }
+
+        if (trapNodes.has(vNode.name)) {
+            return Math.floor(Math.random() * 2) + 1; // Вход в ловушку: 1 - 2
+        }
+
+        if (trapNodes.has(uNode.name)) {
+            return Math.floor(Math.random() * 5) + 10; // Выход из ловушки: 10 - 14
+        }
 
         if (isShortcut) {
-            return Math.floor(Math.random() * 7) + 10; // Тяжелые обходы: 10 - 16
+            return Math.floor(Math.random() * 7) + 10; // Длинный перескок: 10 - 16
         } else if (isNearEnd) {
-            return Math.floor(Math.random() * 3) + 1;  // Легковесные цепочки в конце: 1 - 3
+            return Math.floor(Math.random() * 3) + 1;  // Возле финиша: 1 - 3
         } else {
-            return Math.floor(Math.random() * 6) + 4;  // Обычные ребра: 4 - 9
+            return Math.floor(Math.random() * 6) + 4;  // Обычное ребро: 4 - 9
         }
     }
 
@@ -88,20 +148,74 @@ window.GraphModule = (function() {
         }
     }
 
-    function generateGraph(difficulty, directed, requireBackward) {
+    // Оптимизированный алгоритм проверки структуры с ранним выходом (Early Exit)
+    function hasPathWithMinBacksteps(nodes, adj, startName, endName, minBacksteps) {
+        const numNodes = nodes.length;
+        const nodeNames = nodes.map(n => n.name);
+        const startIdx = nodeNames.indexOf(startName);
+        const endIdx = nodeNames.indexOf(endName);
+        if (startIdx === -1 || endIdx === -1) return false;
+
+        const visited = new Array(numNodes).fill(false);
+        let found = false;
+
+        function dfs(u, currentBacksteps) {
+            if (found) return;
+            if (u === endIdx) {
+                if (currentBacksteps >= minBacksteps) {
+                    found = true;
+                }
+                return;
+            }
+
+            const uName = nodeNames[u];
+            const uNode = nodes[u];
+
+            if (adj[uName]) {
+                for (let vName in adj[uName]) {
+                    const vIdx = nodeNames.indexOf(vName);
+                    if (vIdx === -1) continue;
+                    if (!visited[vIdx]) {
+                        const vNode = nodes[vIdx];
+                        const isBack = (vNode.layer < uNode.layer) ? 1 : 0;
+                        
+                        visited[vIdx] = true;
+                        dfs(vIdx, currentBacksteps + isBack);
+                        visited[vIdx] = false;
+                    }
+                }
+            }
+        }
+
+        visited[startIdx] = true;
+        dfs(startIdx, 0);
+        return found;
+    }
+
+    function generateGraph(difficulty, directed, userMinEdges, userMaxEdges, userMinSteps, userMinBacksteps = 0) {
         const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.easy;
         const layers = config.layers;
         const totalLayers = layers.length;
 
-        let attempts = 0; 
+        const startTime = performance.now(); 
+        let outerAttempts = 0; 
 
-        // Цикл генерации для исключения глубокой рекурсии
-        while (true) {
-            attempts++;
+        const maxOuterAttempts = 150;
+        const maxWeightAttempts = 30;
+
+        while (outerAttempts < maxOuterAttempts) {
+            outerAttempts++;
+
+            // Предохранитель времени выполнения на одну итерацию
+            if (performance.now() - startTime > 400) {
+                break;
+            }
+
             let nodesList = [];
             let layersNodes = [];
             let nodeIndex = 0;
 
+            // Генерация узлов по слоям
             for (let l = 0; l < totalLayers; l++) {
                 let size = layers[l];
                 let layerList = [];
@@ -127,9 +241,105 @@ window.GraphModule = (function() {
                 adj[node.name] = {};
             });
 
-            let colorIndex = 0;
+            // --- СОЗДАНИЕ СТРУКТУРЫ СВЯЗЕЙ ---
+            layersNodes[1].forEach(nextNode => {
+                adj[startNode][nextNode.name] = { weight: 0, color: '' };
+                if (!directed) {
+                    adj[nextNode.name][startNode] = { weight: 0, color: '' };
+                }
+            });
 
-            // --- ГЕНЕРАЦИЯ ДИНАМИЧЕСКИХ ЛОВУШЕК ---
+            for (let l = 1; l < totalLayers - 2; l++) {
+                let currentLayer = layersNodes[l];
+                let nextLayer = layersNodes[l + 1];
+
+                currentLayer.forEach(currNode => {
+                    let target = nextLayer[Math.floor(Math.random() * nextLayer.length)];
+                    adj[currNode.name][target.name] = { weight: 0, color: '' };
+                    if (!directed) {
+                        adj[target.name][currNode.name] = { weight: 0, color: '' };
+                    }
+                });
+
+                nextLayer.forEach(nextNode => {
+                    let incoming = Object.keys(adj).filter(name => adj[name][nextNode.name] !== undefined);
+                    if (incoming.length === 0) {
+                        let source = currentLayer[Math.floor(Math.random() * currentLayer.length)];
+                        adj[source.name][nextNode.name] = { weight: 0, color: '' };
+                        if (!directed) {
+                            adj[nextNode.name][source.name] = { weight: 0, color: '' };
+                        }
+                    }
+                });
+            }
+
+            let penultLayer = layersNodes[totalLayers - 2];
+            penultLayer.forEach(node => {
+                adj[node.name][endNode] = { weight: 0, color: '' };
+                if (!directed) {
+                    adj[endNode][node.name] = { weight: 0, color: '' };
+                }
+            });
+
+            const getCurrentEdgeCount = () => {
+                let count = 0;
+                for (let u in adj) {
+                    for (let v in adj[u]) {
+                        if (directed || u < v) {
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            };
+
+            let candidates = [];
+            for (let i = 0; i < nodesList.length; i++) {
+                for (let j = 0; j < nodesList.length; j++) {
+                    if (i === j) continue;
+                    let u = nodesList[i];
+                    let v = nodesList[j];
+
+                    let isValidTransition = false;
+                    let diff = v.layer - u.layer;
+
+                    if (directed) {
+                        if (diff === 1 || diff === 2 || diff === -1) {
+                            isValidTransition = true;
+                        }
+                    } else {
+                        if (u.name < v.name && (diff === 1 || diff === 2)) {
+                            isValidTransition = true;
+                        }
+                    }
+
+                    if (isValidTransition && adj[u.name][v.name] === undefined) {
+                        candidates.push({ u: u.name, v: v.name });
+                    }
+                }
+            }
+
+            candidates.sort(() => 0.5 - Math.random());
+            let targetEdgeCount = Math.floor(Math.random() * (userMaxEdges - userMinEdges + 1)) + userMinEdges;
+
+            while (getCurrentEdgeCount() < targetEdgeCount && candidates.length > 0) {
+                let edge = candidates.pop();
+                adj[edge.u][edge.v] = { weight: 0, color: '' };
+                if (!directed) {
+                    adj[edge.v][edge.u] = { weight: 0, color: '' };
+                }
+            }
+
+            if (getCurrentEdgeCount() < userMinEdges) {
+                continue; 
+            }
+
+            // --- КРИТИЧЕСКАЯ АЛГОРИТМИЧЕСКАЯ ПРОВЕРКА СТРУКТУРЫ ---
+            let structureIsValid = hasPathWithMinBacksteps(nodesList, adj, startNode, endNode, userMinBacksteps);
+            if (!structureIsValid) {
+                continue; 
+            }
+
             const intermediateNodes = nodesList.filter(n => !n.isStart && !n.isEnd);
             let trapCount = 1;
             if (difficulty === 'medium') trapCount = Math.floor(Math.random() * 2) + 1;
@@ -139,230 +349,77 @@ window.GraphModule = (function() {
             const shuffled = [...intermediateNodes].sort(() => 0.5 - Math.random());
             const trapNodes = new Set(shuffled.slice(0, trapCount).map(n => n.name));
 
-            // 2. Генерация ребер со статической привязкой цвета из палитры
-            for (let l = 0; l < totalLayers - 1; l++) {
-                let currentLayer = layersNodes[l];
-                let nextLayer = layersNodes[l + 1];
+            let solved = false;
+            let finalSolution = null;
+            let finalBackwardStepsCount = 0;
 
-                if (l === 0) {
-                    let currNode = currentLayer[0]; 
-                    nextLayer.forEach(nextNode => {
-                        let w;
-                        if (trapNodes.has(nextNode.name)) {
-                            w = Math.floor(Math.random() * 2) + 1; 
-                        } else {
-                            w = Math.floor(Math.random() * 4) + 7; 
-                        }
-                        let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                        colorIndex++;
-
-                        adj[currNode.name][nextNode.name] = { weight: w, color: edgeColor };
-                        if (!directed) {
-                            adj[nextNode.name][currNode.name] = { weight: w, color: edgeColor };
-                        }
-                    });
-                } 
-                else if (l === 1) {
-                    let nonTrapNodes = currentLayer.filter(n => !trapNodes.has(n.name));
-
-                    currentLayer.forEach(currNode => {
-                        const isCurrTrap = trapNodes.has(currNode.name);
-                        if (isCurrTrap) {
-                            nextLayer.forEach(nextNode => {
-                                let w = Math.floor(Math.random() * 5) + 10; 
-                                let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                                colorIndex++;
-
-                                adj[currNode.name][nextNode.name] = { weight: w, color: edgeColor };
-                                if (!directed) {
-                                    adj[nextNode.name][currNode.name] = { weight: w, color: edgeColor };
-                                }
-                            });
-                        } else {
-                            let target = nextLayer[Math.floor(Math.random() * nextLayer.length)];
-                            const isTargetTrap = trapNodes.has(target.name);
-                            
-                            let w;
-                            if (isTargetTrap) {
-                                w = Math.floor(Math.random() * 2) + 1; 
-                            } else {
-                                w = calculateWeight(l, l + 1, totalLayers);
-                            }
-                            
-                            let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                            colorIndex++;
-
-                            adj[currNode.name][target.name] = { weight: w, color: edgeColor };
-                            if (!directed) {
-                                adj[target.name][currNode.name] = { weight: w, color: edgeColor };
-                            }
-                        }
-                    });
-
-                    nextLayer.forEach(nextNode => {
-                        let incoming = Object.keys(adj).filter(name => adj[name][nextNode.name] !== undefined);
-                        if (incoming.length === 0) {
-                            let source = nonTrapNodes.length > 0 
-                                ? nonTrapNodes[Math.floor(Math.random() * nonTrapNodes.length)]
-                                : currentLayer[Math.floor(Math.random() * currentLayer.length)];
-                            
-                            const isSourceTrap = trapNodes.has(source.name);
-                            const isNextTrap = trapNodes.has(nextNode.name);
-                            
-                            let w;
-                            if (isSourceTrap) {
-                                w = Math.floor(Math.random() * 5) + 10;
-                            } else if (isNextTrap) {
-                                w = Math.floor(Math.random() * 2) + 1;
-                            } else {
-                                w = calculateWeight(l, l + 1, totalLayers);
-                            }
-
-                            let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                            colorIndex++;
-
-                            adj[source.name][nextNode.name] = { weight: w, color: edgeColor };
-                            if (!directed) {
-                                adj[nextNode.name][source.name] = { weight: w, color: edgeColor };
-                            }
-                        }
-                    });
-                } 
-                else {
-                    currentLayer.forEach(currNode => {
-                        let target = nextLayer[Math.floor(Math.random() * nextLayer.length)];
-                        let w = calculateWeight(l, l + 1, totalLayers);
-                        let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                        colorIndex++;
-
-                        adj[currNode.name][target.name] = { weight: w, color: edgeColor };
-                        if (!directed) {
-                            adj[target.name][currNode.name] = { weight: w, color: edgeColor };
-                        }
-                    });
-
-                    nextLayer.forEach(nextNode => {
-                        let incoming = Object.keys(adj).filter(name => adj[name][nextNode.name] !== undefined);
-                        if (incoming.length === 0) {
-                            let source = currentLayer[Math.floor(Math.random() * currentLayer.length)];
-                            let w = calculateWeight(l, l + 1, totalLayers);
-                            let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                            colorIndex++;
-
-                            adj[source.name][nextNode.name] = { weight: w, color: edgeColor };
-                            if (!directed) {
-                                adj[nextNode.name][source.name] = { weight: w, color: edgeColor };
-                            }
-                        }
-                    });
+            for (let weightAttempt = 0; weightAttempt < maxWeightAttempts; weightAttempt++) {
+                if (performance.now() - startTime > 400) {
+                    break;
                 }
-            }
 
-            // 3. Добавление перескоков через слой
-            for (let l = 0; l < totalLayers - 2; l++) {
-                let currentLayer = layersNodes[l];
-                let skipLayer = layersNodes[l + 2];
+                let colorIndex = 0;
+                for (let u in adj) {
+                    for (let v in adj[u]) {
+                        if (directed || u < v) {
+                            let uNode = nodesList.find(n => n.name === u);
+                            let vNode = nodesList.find(n => n.name === v);
+                            let w = getEdgeWeight(uNode, vNode, totalLayers, trapNodes);
+                            let color = PALETTE[colorIndex % PALETTE.length];
+                            colorIndex++;
 
-                currentLayer.forEach(currNode => {
-                    if (Math.random() < 0.4) {
-                        let target = skipLayer[Math.floor(Math.random() * skipLayer.length)];
-                        
-                        const isCurrTrap = trapNodes.has(currNode.name);
-                        const isTargetTrap = trapNodes.has(target.name);
-                        
-                        let w;
-                        if (isCurrTrap) {
-                            w = Math.floor(Math.random() * 5) + 15; 
-                        } else if (isTargetTrap) {
-                            w = Math.floor(Math.random() * 2) + 2;  
-                        } else {
-                            w = calculateWeight(l, l + 2, totalLayers);
-                        }
-                        
-                        let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                        colorIndex++;
-
-                        adj[currNode.name][target.name] = { weight: w, color: edgeColor };
-                        if (!directed) {
-                            adj[target.name][currNode.name] = { weight: w, color: edgeColor };
-                        }
-                    }
-                });
-            }
-
-            // --- 4. Добавление обратных ребер (шаг назад) для ориентированного графа ---
-            if (directed) {
-                for (let l = 1; l < totalLayers - 1; l++) {
-                    let currentLayer = layersNodes[l];
-                    let prevLayer = layersNodes[l - 1]; 
-
-                    currentLayer.forEach(currNode => {
-                        if (Math.random() < 0.35) {
-                            let validTargets = prevLayer.filter(targetNode => {
-                                let noForwardEdge = adj[targetNode.name][currNode.name] === undefined;
-                                let noBackwardEdgeYet = adj[currNode.name][targetNode.name] === undefined;
-                                return noForwardEdge && noBackwardEdgeYet;
-                            });
-
-                            if (validTargets.length > 0) {
-                                let target = validTargets[Math.floor(Math.random() * validTargets.length)];
-                                
-                                let w = Math.floor(Math.random() * 4) + 2; 
-                                let edgeColor = PALETTE[colorIndex % PALETTE.length];
-                                colorIndex++;
-
-                                adj[currNode.name][target.name] = { weight: w, color: edgeColor };
+                            adj[u][v].weight = w;
+                            adj[u][v].color = color;
+                            if (!directed) {
+                                adj[v][u].weight = w;
+                                adj[v][u].color = color;
                             }
-                        }
-                    });
-                }
-            }
-
-            // --- БАЛАНСИРОВКА: На каждом пути от старта до финиша должен быть как минимум один тяжелый узел (ребро) ---
-            ensureHeavyOnEachPath(nodesList, adj, startNode, endNode);
-
-            let sol = solveDijkstra(nodesList, adj, startNode, endNode);
-            
-            // Фильтрация длины пути
-            let minEdges = 1; 
-            let maxEdges = Infinity;
-
-            if (difficulty === 'hard') {
-                minEdges = 4;
-            } else if (difficulty === 'extreme') {
-                minEdges = 7;
-                maxEdges = 10;
-            }
-
-            const pathEdgesCount = sol.path ? sol.path.length - 1 : 0;
-
-            // Логика проверки на обязательный "шаг назад"
-            let hasBackStep = true;
-            if (requireBackward && sol.path && attempts < 500) {
-                hasBackStep = false;
-                for (let i = 0; i < sol.path.length - 1; i++) {
-                    let uNode = nodesList.find(n => n.name === sol.path[i]);
-                    let vNode = nodesList.find(n => n.name === sol.path[i + 1]);
-                    if (uNode && vNode) {
-                        if (vNode.layer < uNode.layer) {
-                            hasBackStep = true;
-                            break;
                         }
                     }
                 }
+
+                ensureHeavyOnEachPath(nodesList, adj, startNode, endNode);
+
+                let sol = solveDijkstra(nodesList, adj, startNode, endNode);
+                const pathEdgesCount = sol.path ? sol.path.length - 1 : 0;
+
+                let backwardStepsCount = 0;
+                if (sol.path) {
+                    for (let i = 0; i < sol.path.length - 1; i++) {
+                        let uNode = nodesList.find(n => n.name === sol.path[i]);
+                        let vNode = nodesList.find(n => n.name === sol.path[i + 1]);
+                        if (uNode && vNode && vNode.layer < uNode.layer) {
+                            backwardStepsCount++;
+                        }
+                    }
+                }
+
+                if (sol.distance !== Infinity && pathEdgesCount >= userMinSteps && backwardStepsCount >= userMinBacksteps) {
+                    solved = true;
+                    finalSolution = sol;
+                    finalBackwardStepsCount = backwardStepsCount;
+                    break;
+                }
             }
 
-            if (sol.distance !== Infinity && pathEdgesCount >= minEdges && pathEdgesCount <= maxEdges && hasBackStep) {
+            if (solved) {
                 return {
                     nodes: nodesList,
                     adj: adj,
-                    solution: sol,
+                    solution: finalSolution,
                     startNode: startNode,
                     endNode: endNode,
-                    totalLayers: totalLayers
+                    totalLayers: totalLayers,
+                    backwardStepsCount: finalBackwardStepsCount,
+                    totalEdges: getCurrentEdgeCount()
                 };
             }
         }
+
+        console.warn("Could not satisfy all constraints. Relaxing step constraints slightly.");
+        const nextMinSteps = Math.max(1, userMinSteps - 1);
+        const nextMinBacksteps = Math.max(0, userMinBacksteps - 1);
+        return generateGraph(difficulty, directed, userMinEdges, userMaxEdges, nextMinSteps, nextMinBacksteps);
     }
 
     function solveDijkstra(nodes, adj, start, end) {
@@ -410,6 +467,7 @@ window.GraphModule = (function() {
     }
 
     return {
-        generateGraph: generateGraph
+        generateGraph: generateGraph,
+        getEdgeLimits: getEdgeLimits
     };
 })();

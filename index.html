@@ -49,11 +49,31 @@
             </label>
         </div>
 
-        <!-- Опция "Шаг назад" (для средних и высоких сложностей) -->
-        <div class="mode-select" id="backward-step-container" style="display: none; justify-content: center; margin-top: -5px;">
-            <label style="font-weight: normal; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                <input type="checkbox" id="chk-require-backward"> <span data-i18n="modeBackward">Require backward step (loop)</span>
-            </label>
+        <!-- Панель кастомных настроек графа -->
+        <div class="custom-settings">
+            <div class="setting-item">
+                <label for="input-min-edges" data-i18n="labelMinEdges">Min Connections:</label>
+                <input type="number" id="input-min-edges" min="1" max="100" value="6">
+                <span class="limit-hint" id="hint-min-edges">(min: 6)</span>
+            </div>
+            <div class="setting-item">
+                <label for="input-max-edges" data-i18n="labelMaxEdges">Max Connections:</label>
+                <input type="number" id="input-max-edges" min="1" max="100" value="12">
+                <span class="limit-hint" id="hint-max-edges">(max: 12)</span>
+            </div>
+            <div class="setting-item">
+                <label for="input-min-steps" data-i18n="labelMinSteps">Min Path Steps:</label>
+                <input type="number" id="input-min-steps" min="1" max="5" value="1">
+                <span class="limit-hint" id="hint-min-steps">(max: 5)</span>
+            </div>
+            <div class="setting-item">
+                <label for="input-min-backsteps" data-i18n="labelMinBacksteps">Min Backsteps:</label>
+                <input type="number" id="input-min-backsteps" min="0" max="4" value="0">
+                <span class="limit-hint" id="hint-min-backsteps">(max: 4)</span>
+            </div>
+            <div style="flex-basis: 100%; display: flex; justify-content: center; margin-top: 8px;">
+                <button id="btn-reset-defaults" class="secondary" style="font-size: 12px; padding: 6px 14px;" data-i18n="btnResetDefaults">Reset to Defaults</button>
+            </div>
         </div>
 
         <!-- Краткое пояснение к выбранному режиму графа -->
@@ -68,6 +88,7 @@
         
         <div class="input-panel">
             <div class="path-display" id="path-display">Your path: A (Sum: 0)</div>
+            <div class="graph-info" id="graph-info" style="margin-top: -5px; font-size: 14px; opacity: 0.85; font-weight: 600; text-align: center;"></div>
             <div class="action-buttons">
                 <button id="btn-check" class="check-btn" data-i18n="btnCheck">Verify</button>
                 <button id="btn-show-solution" class="secondary" style="display: none;" data-i18n="btnShowSolution">Show Solution</button>
