@@ -318,7 +318,7 @@ body.dark .feedback.error {
 .game-area:fullscreen {
     background-color: var(--card-bg);
     color: var(--text);
-    padding: 30px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -326,21 +326,25 @@ body.dark .feedback.error {
     width: 100vw !important;
     height: 100vh !important;
     box-sizing: border-box;
-    gap: 20px;
+    gap: 15px;
 }
 
 .game-area:fullscreen canvas {
-    max-width: 95vw !important;
-    max-height: 70vh !important;
-    width: auto !important;
-    height: auto !important;
-    aspect-ratio: 900/500;
+    /* Растягиваем по ширине экрана, сохраняя пропорции 900/500 */
+    width: 95vw !important;
+    height: calc(95vw * 500 / 900) !important;
+    
+    /* Ограничиваем по высоте, чтобы оставалось место под элементы управления */
+    max-height: 72vh !important;
+    max-width: calc(72vh * 900 / 500) !important;
+    
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
 }
 
 .game-area:fullscreen .input-panel {
     width: 100%;
-    max-width: 900px;
+    /* Ограничиваем ширину панели управления точно по ширине растянутого холста */
+    max-width: min(95vw, calc(72vh * 900 / 500));
 }
 
 /* Скрываем оверлей-кнопку выхода в обычном режиме */
