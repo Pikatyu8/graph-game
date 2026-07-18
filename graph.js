@@ -192,7 +192,7 @@ window.GraphModule = (function() {
         return found;
     }
 
-    function generateGraph(difficulty, directed, userMinEdges, userMaxEdges, userMinSteps, userMinBacksteps = 0) {
+    function generateGraph(difficulty, directed, userMinEdges, userMaxEdges, userMinSteps, userMinBacksteps = 0, depth = 0) {
         const config = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.easy;
         const layers = config.layers;
         const totalLayers = layers.length;
@@ -418,12 +418,34 @@ window.GraphModule = (function() {
             }
         }
 
-        console.warn("Could not satisfy all constraints. Relaxing step constraints slightly.");
-        const nextMinSteps = Math.max(1, userMinSteps - 1);
-        const nextMinBacksteps = Math.max(0, userMinBacksteps - 1);
-        return generateGraph(difficulty, directed, userMinEdges, userMaxEdges, nextMinSteps, nextMinBacksteps);
-    }
+        // --- ИЗМЕНЕННАЯ ЛОГИКА РЕЛАКСАЦИИ (userMinSteps остается строгим) ---
+        if (depth < 5) {
+            console.warn("Could not satisfy all constraints. Relaxing backsteps but keeping steps strict. Depth:", depth);
+            const nextMinSteps = userMinSteps; // Число шагов строго сохраняем
+            const nextMinBacksteps = Math.max(0, userMinBacksteps - 1);
 
+            if (nextMinSteps === userMinSteps && nextMinBacksteps === userMinBacksteps) {
+                // Если шаги назад уже 0, даем алгоритму больше свободы, расширяя допустимые границы плотности ребер
+                const relaxedMinEdges = Math.max(1, userMinEdges - 2);
+                const relaxedMaxEdges = userMaxEdges + 2;
+                return generateGraph(difficulty, directed, relaxedMinEdges, relaxedMaxEdges, nextMinSteps, nextMinBacksteps, depth + 1);
+            } else {
+                return generateGraph(difficulty, directed, userMinEdges, userMaxEdges, nextMinSteps, nextMinBacksteps, depth + 1);
+            }
+        } else if (depth === 5) {
+            // Если мы перепробовали все варианты и зашли глубоко в рекурсию, форсируем связность графа вверх,
+            // чтобы точно найти путь с нужным числом шагов, сбросив backsteps до 0.
+            console.error("Failed to generate graph. Forcing density to satisfy strict step count.");
+            const extremeMinEdges = userMinEdges;
+            const extremeMaxEdges = userMaxEdges + 15;
+            return generateGraph(difficulty, directed, extremeMinEdges, extremeMaxEdges, userMinSteps, 0, 6);
+        } else {
+            // Крайний случай предохранения от бесконечной рекурсии (если математически невозможно)
+            console.error("Critical fallback triggered: forcing step limit relaxation to 1.");
+            return generateGraph(difficulty, directed, userMinEdges, userMaxEdges, 1, 0, 7); 
+        }
+    }
+    
     function solveDijkstra(nodes, adj, start, end) {
         let distances = {};
         let prev = {};
