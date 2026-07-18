@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dijkstra Trainer: Mental Shortest Path</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <!-- Верхняя панель: Темная тема, полноэкранный режим и переключатель языков -->
+    <div class="top-bar">
+        <div class="top-left">
+            <button id="btn-theme" class="icon-btn" title="Toggle theme">🌙 Mode</button>
+            <button id="btn-fullscreen" class="icon-btn" title="Toggle fullscreen">Fullscreen 📺</button>
+        </div>
+        <div class="top-right">
+            <button id="btn-lang" class="icon-btn">🇷🇺 RU</button>
+        </div>
+    </div>
+
+    <h1 data-i18n="title">Dijkstra Trainer: Mental Shortest Path</h1>
+    
+    <div class="rules">
+        <strong data-i18n="howToPlay">How to Play:</strong>
+        <ul style="margin: 5px 0 0 20px; padding: 0;">
+            <li data-i18n="rule1">Choose difficulty and graph mode, then click <strong>«New Game»</strong> (or press <strong>N</strong>).</li>
+            <li data-i18n="rule2">Your task is to find the cheapest path from the green start node <strong>A</strong> to the red end node.</li>
+            <li data-i18n="rule3"><strong>Click on nodes/edges or press letters</strong> on your keyboard (e.g., A, B, C...) to build your path. Re-clicking a node or pressing its key backtracks your path.</li>
+            <li data-i18n="rule4">After reaching the final node, click <strong>«Verify»</strong> (or press <strong>Enter</strong>).</li>
+        </ul>
+    </div>
+
+    <div class="controls">
+        <div class="difficulty-select">
+            <button class="diff-btn active" data-diff="easy" data-i18n="diffEasy">Easy (6)</button>
+            <button class="diff-btn" data-diff="medium" data-i18n="diffMedium">Medium (10)</button>
+            <button class="diff-btn" data-diff="hard" data-i18n="diffHard">Hard (16)</button>
+            <button class="diff-btn" data-diff="extreme" data-i18n="diffExtreme">Extreme (24)</button>
+        </div>
+        
+        <div class="mode-select">
+            <label style="cursor: pointer;">
+                <input type="radio" name="graph-mode" value="undirected" checked> <span data-i18n="modeUndirected">Undirected</span>
+            </label>
+            <label style="cursor: pointer;">
+                <input type="radio" name="graph-mode" value="directed"> <span data-i18n="modeDirected">Directed</span>
+            </label>
+        </div>
+
+        <!-- Опция "Шаг назад" (для средних и высоких сложностей) -->
+        <div class="mode-select" id="backward-step-container" style="display: none; justify-content: center; margin-top: -5px;">
+            <label style="font-weight: normal; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="chk-require-backward"> <span data-i18n="modeBackward">Require backward step (loop)</span>
+            </label>
+        </div>
+
+        <!-- Краткое пояснение к выбранному режиму графа -->
+        <div id="mode-explanation" class="mode-explanation"></div>
+    </div>
+
+    <div class="game-area">
+        <!-- Кнопка закрытия полноэкранного режима -->
+        <button id="btn-exit-fullscreen-overlay" class="icon-btn" style="display: none; position: absolute; top: 15px; right: 15px; z-index: 9999; font-size: 18px; padding: 8px 12px;">✕</button>
+        
+        <canvas id="graph-canvas" width="900" height="500"></canvas>
+        
+        <div class="input-panel">
+            <div class="path-display" id="path-display">Your path: A (Sum: 0)</div>
+            <div class="action-buttons">
+                <button id="btn-check" class="check-btn" data-i18n="btnCheck">Verify</button>
+                <button id="btn-show-solution" class="secondary" style="display: none;" data-i18n="btnShowSolution">Show Solution</button>
+                <button id="btn-new-game" data-i18n="btnNewGame">New Game</button>
+                <button id="btn-reset-path" class="secondary" data-i18n="btnResetPath">Reset Path</button>
+            </div>
+            <div id="feedback-box" class="feedback"></div>
+        </div>
+    </div>
+</div>
+
+<script src="graph.js?v=2"></script>
+<script src="game.js?v=3"></script>
+</body>
+</html>
